@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Flutter: Web (chrome, port 58072) with local.env",
+      "type": "shell",
+      "command": "flutter",
+      "args": [
+        "run",
+        "-d",
+        "chrome",
+        "--web-port",
+        "58072",
+        "--dart-define-from-file",
+        "${workspaceFolder}/local.env"
+      ],
+      {
+        "label": "Flutter: macOS with local.env",
+        "type": "shell",
+        "command": "flutter",
+        "args": [
+          "run",
+          "-d",
+          "macos",
+          "--dart-define-from-file",
+          "${workspaceFolder}/local.env"
+        ],
+        "options": { "cwd": "${workspaceFolder}" },
+        "problemMatcher": []
+      },
+      {
+        "label": "Flutter: Windows with local.env",
+        "type": "shell",
+        "command": "flutter",
+        "args": [
+          "run",
+          "-d",
+          "windows",
+          "--dart-define-from-file",
+          "${workspaceFolder}/local.env"
+        ],
+        "options": { "cwd": "${workspaceFolder}" },
+        "problemMatcher": []
+      },
+      {
+        "label": "Flutter: Linux with local.env",
+        "type": "shell",
+        "command": "flutter",
+        "args": [
+          "run",
+          "-d",
+          "linux",
+          "--dart-define-from-file",
+          "${workspaceFolder}/local.env"
+        ],
+        "options": { "cwd": "${workspaceFolder}" },
+        "problemMatcher": []
+      }
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+    {
+      "label": "Flutter: iOS (simulator) with local.env",
+      "type": "shell",
+      "command": "flutter",
+      "args": [
+        "run",
+        "-d",
+        "ios",
+        "--dart-define-from-file",
+        "${workspaceFolder}/local.env"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Flutter: Android (device/emulator) with local.env",
+      "type": "shell",
+      "command": "flutter",
+      "args": [
+        "run",
+        "-d",
+        "android",
+        "--dart-define-from-file",
+        "${workspaceFolder}/local.env"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
