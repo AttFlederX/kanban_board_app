@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:kanban_board_app/screens/taskboard_screen.dart';
+import 'package:provider/provider.dart';
 import 'package:kanban_board_app/services/auth_service.dart';
+import 'package:kanban_board_app/services/api_service.dart';
+import 'package:kanban_board_app/providers/app_state.dart';
 import 'package:google_sign_in_web/web_only.dart' as gsw;
 import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:async';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -51,19 +54,12 @@ class _GoogleSignInButtonState extends State<_GoogleSignInButton> {
       _error = null;
     });
     try {
-      // Use the AuthService v7 pattern. On web, this returns null and the web
-      // button below will handle interactive sign-in.
-      final user = await AuthService.signInWithGoogle();
-      if (user == null) {
-        setState(
-          () => _error = 'Sign-in failed or not supported on this platform.',
-        );
-        return;
+      final appState = context.read<AppState>();
+      await appState.signIn();
+
+      if (appState.error != null) {
+        setState(() => _error = appState.error);
       }
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TaskboardScreen()),
-      );
     } catch (e) {
       setState(
         () => _error = 'Sign-in failed. Please try again.\n${e.toString()}',
@@ -151,24 +147,47 @@ class _WebOfficialButton extends StatefulWidget {
 class _WebOfficialButtonState extends State<_WebOfficialButton> {
   String? _error;
   bool _initialized = false;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
-
     _init();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _init() async {
     try {
       await AuthService.ensureInitialized();
+
       // Navigate when sign-in completes.
-      GoogleSignIn.instance.authenticationEvents.listen(
-        (event) {
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const TaskboardScreen()),
-            );
+      _authSubscription = GoogleSignIn.instance.authenticationEvents.listen(
+        (event) async {
+          if (event is GoogleSignInAuthenticationEventSignIn) {
+            // Get ID token from event for web
+            final idToken = event.user.authentication.idToken;
+
+            if (idToken != null) {
+              try {
+                // Exchange Google token with backend
+                final response = await ApiService.authenticateWithGoogle(
+                  idToken,
+                );
+                final backendUser = response.user;
+
+                // Access AppState here, after initialization is complete
+                if (mounted) {
+                  context.read<AppState>().setUser(backendUser);
+                }
+              } catch (e) {
+                if (mounted) setState(() => _error = e.toString());
+              }
+            }
           }
         },
         onError: (e) {

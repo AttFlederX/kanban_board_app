@@ -1,15 +1,8 @@
 import 'package:flutter/foundation.dart'
     show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:google_sign_in/google_sign_in.dart';
-
-class AuthUser {
-  final String id;
-  final String? displayName;
-  final String? email;
-  final String? photoUrl;
-
-  AuthUser({required this.id, this.displayName, this.email, this.photoUrl});
-}
+import 'package:kanban_board_app/models/user.dart';
+import 'api_service.dart';
 
 class AuthService {
   // Initialize the plugin (required on v7+), providing web clientId when on web.
@@ -52,7 +45,7 @@ class AuthService {
     }
   }
 
-  static Future<AuthUser?> signInWithGoogle() async {
+  static Future<User?> signInWithGoogle() async {
     try {
       await _initialize();
 
@@ -76,13 +69,25 @@ class AuthService {
           .first;
 
       // v7 provides identity fields in the sign-in event.
-      final String id = (evt as dynamic).id as String? ?? '';
-      final String? displayName = (evt as dynamic).displayName as String?;
-      final String? email = (evt as dynamic).email as String?;
-      final String? photoUrl = (evt as dynamic).photoUrl as String?;
+      final id = evt.user.id;
+      final displayName = evt.user.displayName;
+      final email = evt.user.email;
+      final photoUrl = evt.user.photoUrl;
 
       if (id.isEmpty) return null;
-      return AuthUser(
+
+      // Get Google ID token for backend authentication from the event
+      final idToken = evt.user.authentication.idToken;
+
+      if (idToken != null) {
+        // Exchange Google token with backend
+        final response = await ApiService.authenticateWithGoogle(idToken);
+        final backendUser = response.user;
+
+        return backendUser;
+      }
+
+      return User(
         id: id,
         displayName: displayName,
         email: email,
@@ -98,6 +103,7 @@ class AuthService {
     try {
       await _initialize();
       await GoogleSignIn.instance.signOut();
+      await ApiService.clearToken();
     } on Exception catch (e) {
       debugPrint('Google sign-out failed: $e');
     }
