@@ -1,8 +1,11 @@
+// ignore_for_file: unused_import
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart'
     show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kanban_board_app/models/user.dart';
 import 'api_service.dart';
+import 'macos_auth_service.dart';
 
 class AuthService {
   static bool _initialized = false;
@@ -163,6 +166,31 @@ class AuthService {
 
   static Future<User?> signInWithGoogle() async {
     try {
+      // Use custom macOS implementation
+      if (!kIsWeb && Platform.isMacOS) {
+        debugPrint('AuthService: Using macOS-specific sign-in...');
+        final idToken = await MacOSAuthService.signInWithGoogle();
+
+        if (idToken == null) {
+          debugPrint('Failed to obtain ID token from macOS auth');
+          return null;
+        }
+
+        debugPrint('Successfully obtained Google ID token from macOS');
+
+        // Exchange Google token with backend
+        try {
+          final response = await ApiService.authenticateWithGoogle(idToken);
+          final backendUser = response.user;
+          debugPrint('Backend authentication successful');
+          return backendUser;
+        } catch (e) {
+          debugPrint('Backend authentication failed: $e');
+          return null;
+        }
+      }
+
+      // Use standard google_sign_in for other platforms
       await _initialize();
 
       debugPrint('AuthService: Starting Google sign-in...');

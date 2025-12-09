@@ -36,14 +36,15 @@
 				<string>Editor</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
-					<!-- Replace with your macOS client ID reversed -->
-					<string>com.googleusercontent.apps.889476058542-u752paaqlu82m2u61ouljli2khdsit7t</string>
+					<string>$(GID_REVERSED_CLIENT_ID)</string>
 				</array>
 			</dict>
 		</array>
 		<key>GIDClientID</key>
-		<string>889476058542-u752paaqlu82m2u61ouljli2khdsit7t.apps.googleusercontent.com</string>
+		<string>$(GID_CLIENT_ID)</string>
+		<key>GIDClientSecret</key>
+		<string>$(GID_CLIENT_SECRET)</string>
 		<key>GIDServerClientID</key>
-		<string>YOUR_SERVER_CLIENT_ID.apps.googleusercontent.com</string>
+		<string>$(GID_SERVER_CLIENT_ID)</string>
 	</dict>
 </plist>

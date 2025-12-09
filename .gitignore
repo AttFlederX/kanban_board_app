@@ -47,3 +47,6 @@ app.*.map.json
 # Local environment files (secrets)
 local.env
 api/
+
+# macOS secrets
+macos/Runner/Configs/Secrets.xcconfig
