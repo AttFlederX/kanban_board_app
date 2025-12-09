@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../models/task_detail_result.dart';
+import '../models/websocket_message.dart';
 import '../widgets/kanban_column.dart';
 import '../dialogs/task_detail_dialog.dart';
 import '../services/task_service.dart';
@@ -27,11 +29,66 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
   int _currentPage = 0;
   bool _isLoading = true;
   String? _error;
+  StreamSubscription<WebSocketMessage>? _wsSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadTasks();
+    _setupWebSocketListener();
+  }
+
+  void _setupWebSocketListener() {
+    final appState = context.read<AppState>();
+    _wsSubscription = appState.taskUpdates.listen(_handleWebSocketMessage);
+  }
+
+  void _handleWebSocketMessage(WebSocketMessage message) {
+    // Only process messages for the current user
+    final appState = context.read<AppState>();
+    if (message.userId != appState.user?.id) {
+      return;
+    }
+
+    setState(() {
+      switch (message.type) {
+        case WebSocketMessageType.create:
+          if (message.data != null) {
+            final status = TaskStatusExtension.fromApiValue(
+              message.data!.status,
+            );
+            // Check if task doesn't already exist
+            final exists = tasks[status]!.any((t) => t.id == message.taskId);
+            if (!exists) {
+              tasks[status]!.add(message.data!);
+            }
+          }
+          break;
+
+        case WebSocketMessageType.update:
+          if (message.data != null) {
+            final newStatus = TaskStatusExtension.fromApiValue(
+              message.data!.status,
+            );
+
+            // Remove task from all columns
+            for (final status in TaskStatus.values) {
+              tasks[status]!.removeWhere((t) => t.id == message.taskId);
+            }
+
+            // Add updated task to correct column
+            tasks[newStatus]!.add(message.data!);
+          }
+          break;
+
+        case WebSocketMessageType.delete:
+          // Remove task from all columns
+          for (final status in TaskStatus.values) {
+            tasks[status]!.removeWhere((t) => t.id == message.taskId);
+          }
+          break;
+      }
+    });
   }
 
   Future<void> _loadTasks() async {
@@ -71,6 +128,7 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _wsSubscription?.cancel();
     super.dispose();
   }
 
@@ -185,11 +243,6 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
       appBar: AppBar(
         title: const Text('Kanban Board'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadTasks,
-            tooltip: 'Refresh',
-          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
