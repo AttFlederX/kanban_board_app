@@ -111,15 +111,16 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
     TaskStatus fromStatus,
     TaskStatus toStatus,
   ) async {
+    // Update task status via API
+    final updatedTask = item.copyWith(status: toStatus.apiValue);
+
     // Update UI immediately for better UX
     setState(() {
       tasks[fromStatus]!.removeWhere((task) => task.id == item.id);
-      tasks[toStatus]!.add(item);
+      tasks[toStatus]!.add(updatedTask);
     });
 
     try {
-      // Update task status via API
-      final updatedTask = item.copyWith(status: toStatus.apiValue);
       await TaskService.updateTask(updatedTask);
     } catch (e) {
       // Revert on error
@@ -241,6 +242,16 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
                                 isCarousel: true,
                                 onDragCompleted: _onDragCompleted,
                                 onEditTask: _editTask,
+                                onNavigateToColumn: (targetStatus) {
+                                  final targetIndex = TaskStatus.values.indexOf(
+                                    targetStatus,
+                                  );
+                                  _pageController.animateToPage(
+                                    targetIndex,
+                                    duration: const Duration(milliseconds: 300),
+                                    curve: Curves.easeInOut,
+                                  );
+                                },
                               ),
                             );
                           }).toList(),

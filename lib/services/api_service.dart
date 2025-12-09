@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:kanban_board_app/models/auth_response.dart';
@@ -29,6 +30,9 @@ class ApiService {
     final headers = {'Content-Type': 'application/json'};
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
+      debugPrint('ApiService: Adding Authorization header with token');
+    } else {
+      debugPrint('ApiService: No token found, skipping Authorization header');
     }
     return headers;
   }
@@ -76,6 +80,7 @@ class ApiService {
 
   // Exchange Google ID token for JWT
   static Future<AuthResponse> authenticateWithGoogle(String idToken) async {
+    debugPrint('ApiService: Authenticating with Google ID token...');
     final response = await post('/auth/google', {
       'id_token': idToken,
     }, requiresAuth: false);
@@ -85,9 +90,13 @@ class ApiService {
       final resp = AuthResponse.fromJson(data);
 
       await saveToken(resp.token);
+      debugPrint('ApiService: JWT token saved successfully');
 
       return resp;
     } else {
+      debugPrint(
+        'ApiService: Authentication failed with status ${response.statusCode}',
+      );
       throw Exception('Authentication failed: ${response.body}');
     }
   }

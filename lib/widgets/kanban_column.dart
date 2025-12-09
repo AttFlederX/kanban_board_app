@@ -10,6 +10,7 @@ class KanbanColumn extends StatelessWidget {
   final Function(Task item, TaskStatus fromStatus, TaskStatus toStatus)
   onDragCompleted;
   final Function(TaskStatus status, int index) onEditTask;
+  final Function(TaskStatus status)? onNavigateToColumn;
 
   const KanbanColumn({
     super.key,
@@ -18,7 +19,70 @@ class KanbanColumn extends StatelessWidget {
     required this.isCarousel,
     required this.onDragCompleted,
     required this.onEditTask,
+    this.onNavigateToColumn,
   });
+
+  void _showMoveTaskMenu(
+    BuildContext context,
+    Task task,
+    TaskStatus currentStatus,
+  ) {
+    final availableStatuses = TaskStatus.values
+        .where((s) => s != currentStatus)
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Move "${task.title}" to:',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            ...availableStatuses.map(
+              (toStatus) => ListTile(
+                leading: Icon(
+                  _getStatusIcon(toStatus),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: Text(toStatus.label),
+                onTap: () {
+                  Navigator.pop(context);
+                  onDragCompleted(task, currentStatus, toStatus);
+                  // Navigate to the destination column in carousel view
+                  if (isCarousel && onNavigateToColumn != null) {
+                    onNavigateToColumn!(toStatus);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getStatusIcon(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.backlog:
+        return Icons.inbox;
+      case TaskStatus.todo:
+        return Icons.list;
+      case TaskStatus.inProgress:
+        return Icons.hourglass_empty;
+      case TaskStatus.done:
+        return Icons.check_circle;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +130,56 @@ class KanbanColumn extends StatelessWidget {
                     itemCount: tasks.length,
                     itemBuilder: (context, index) {
                       final item = tasks[index];
+
+                      // In carousel view, wrap task card with move button
+                      if (isCarousel) {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          elevation: 2,
+                          child: InkWell(
+                            onTap: () => onEditTask(status, index),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          item.title,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.open_with),
+                                        iconSize: 20,
+                                        tooltip: 'Move task',
+                                        onPressed: () => _showMoveTaskMenu(
+                                          context,
+                                          item,
+                                          status,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.description,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      // In full view, use drag and drop
                       return LongPressDraggable<Map<String, dynamic>>(
                         delay: const Duration(milliseconds: 200),
                         data: {'item': item, 'fromStatus': status},

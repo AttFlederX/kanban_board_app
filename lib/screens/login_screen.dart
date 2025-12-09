@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:kanban_board_app/services/auth_service.dart';
-import 'package:kanban_board_app/services/api_service.dart';
 import 'package:kanban_board_app/providers/app_state.dart';
-import 'package:google_sign_in_web/web_only.dart' as gsw;
-import 'package:google_sign_in/google_sign_in.dart';
-import 'dart:async';
+import 'package:google_sign_in_platform_interface/google_sign_in_platform_interface.dart';
+
+// Conditionally import web-specific button - only loads on web platform
+import 'web_button_stub.dart'
+    if (dart.library.js_interop) 'package:google_sign_in_web/google_sign_in_web.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -25,12 +25,8 @@ class LoginScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              if (kIsWeb)
-                // Render the official Google Sign-In button and listen for events.
-                _WebOfficialButton()
-              else
-                // Consistent Google-branded button across platforms.
-                const _GoogleBrandButton(),
+              // Use the same branded button across all platforms
+              const _GoogleBrandButton(),
             ],
           ),
         ),
@@ -57,13 +53,15 @@ class _GoogleSignInButtonState extends State<_GoogleSignInButton> {
       final appState = context.read<AppState>();
       await appState.signIn();
 
-      if (appState.error != null) {
+      if (mounted && appState.error != null) {
         setState(() => _error = appState.error);
       }
     } catch (e) {
-      setState(
-        () => _error = 'Sign-in failed. Please try again.\n${e.toString()}',
-      );
+      if (mounted) {
+        setState(
+          () => _error = 'Sign-in failed. Please try again.\n${e.toString()}',
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -101,8 +99,9 @@ class GoogleSignInButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 48,
+      width: 240,
       child: ElevatedButton(
-        onPressed: kIsWeb ? null : onPressed,
+        onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: Colors.black87,
@@ -135,90 +134,48 @@ class _GoogleBrandButton extends StatelessWidget {
   const _GoogleBrandButton();
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return _WebGoogleSignInButton();
+    }
     return _GoogleSignInButton();
   }
 }
 
-class _WebOfficialButton extends StatefulWidget {
+// Web-specific button that uses the platform's button rendering
+class _WebGoogleSignInButton extends StatefulWidget {
   @override
-  State<_WebOfficialButton> createState() => _WebOfficialButtonState();
+  State<_WebGoogleSignInButton> createState() => _WebGoogleSignInButtonState();
 }
 
-class _WebOfficialButtonState extends State<_WebOfficialButton> {
-  String? _error;
-  bool _initialized = false;
-  StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
-  @override
-  void dispose() {
-    _authSubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _init() async {
-    try {
-      await AuthService.ensureInitialized();
-
-      // Navigate when sign-in completes.
-      _authSubscription = GoogleSignIn.instance.authenticationEvents.listen(
-        (event) async {
-          if (event is GoogleSignInAuthenticationEventSignIn) {
-            // Get ID token from event for web
-            final idToken = event.user.authentication.idToken;
-
-            if (idToken != null) {
-              try {
-                // Exchange Google token with backend
-                final response = await ApiService.authenticateWithGoogle(
-                  idToken,
-                );
-                final backendUser = response.user;
-
-                // Access AppState here, after initialization is complete
-                if (mounted) {
-                  context.read<AppState>().setUser(backendUser);
-                }
-              } catch (e) {
-                if (mounted) setState(() => _error = e.toString());
-              }
-            }
-          }
-        },
-        onError: (e) {
-          if (mounted) setState(() => _error = e.toString());
-        },
-      );
-      if (mounted) setState(() => _initialized = true);
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    }
-  }
-
+class _WebGoogleSignInButtonState extends State<_WebGoogleSignInButton> {
   @override
   Widget build(BuildContext context) {
-    final button = _initialized
-        ? gsw.renderButton()
-        : const Center(
-            child: SizedBox(
-              height: 24,
-              width: 24,
-              child: CircularProgressIndicator(),
-            ),
-          );
+    final appState = context.watch<AppState>();
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        SizedBox(height: 48, child: button),
-        if (_error != null) ...[
+        if (kIsWeb)
+          SizedBox(
+            height: 50,
+            child: (GoogleSignInPlatform.instance as GoogleSignInPlugin)
+                .renderButton(),
+          )
+        else
+          const SizedBox(
+            height: 50,
+            child: Center(child: Text('Web only button')),
+          ),
+        if (appState.isLoading) ...[
+          const SizedBox(height: 8),
+          const CircularProgressIndicator(),
+        ],
+        if (appState.error != null) ...[
           const SizedBox(height: 8),
           Text(
-            'Sign-in failed. Please try again.\n$_error',
+            appState.error!,
             style: const TextStyle(color: Colors.red),
+            textAlign: TextAlign.center,
           ),
         ],
       ],

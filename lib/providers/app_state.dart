@@ -41,11 +41,15 @@ class AppState extends ChangeNotifier {
 
     try {
       final user = await AuthService.signInWithGoogle();
+      debugPrint('AppState: Sign-in completed, user: ${user?.email}');
       _user = user;
+      _error = null;
     } catch (e) {
+      debugPrint('AppState: Sign-in error: $e');
       _error = e.toString();
     } finally {
       _isLoading = false;
+      debugPrint('AppState: isAuthenticated = $isAuthenticated');
       notifyListeners();
     }
   }

@@ -5,25 +5,100 @@ import 'package:kanban_board_app/models/user.dart';
 import 'api_service.dart';
 
 class AuthService {
-  // Initialize the plugin (required on v7+), providing web clientId when on web.
+  static bool _initialized = false;
+
+  // Initialize the GoogleSignIn plugin with platform-specific configuration
   static Future<void> _initialize() async {
+    if (_initialized) return; // Already initialized
+
     final String? clientId = _resolveClientId();
-    await GoogleSignIn.instance.initialize(clientId: clientId);
+
+    // Note: serverClientId is not supported on web platform
+    // On web, only the web client ID is used via the Google JavaScript API
+    final String? serverClientId = kIsWeb ? null : _resolveServerClientId();
+
+    // Initialize GoogleSignIn instance with configuration
+    await GoogleSignIn.instance.initialize(
+      clientId: clientId,
+      serverClientId: serverClientId,
+    );
+
+    _initialized = true;
   }
 
   // Expose safe idempotent initialization for callers that need the plugin
   // ready before rendering UI (e.g., web button rendering).
   static Future<void> ensureInitialized() => _initialize();
 
-  // Returns the platform-appropriate client ID from dart-define, or a
-  // placeholder for non-web platforms when not provided.
+  // Set up listener for Google Sign-In events (useful for web)
+  static void listenForSignInEvents(Function(User?) onSignIn) {
+    GoogleSignIn.instance.authenticationEvents.listen((event) {
+      if (event is GoogleSignInAuthenticationEventSignIn) {
+        debugPrint('AuthService: Sign-in event detected');
+        _handleSignInEvent(event).then(onSignIn);
+      }
+    });
+  }
+
+  // Handle a sign-in event and extract user information
+  static Future<User?> _handleSignInEvent(
+    GoogleSignInAuthenticationEventSignIn event,
+  ) async {
+    try {
+      final googleUser = event.user;
+      final auth = googleUser.authentication;
+
+      debugPrint('AuthService: User email: ${googleUser.email}');
+
+      // Get the ID token for backend authentication
+      final String? idToken = auth.idToken;
+
+      if (idToken == null) {
+        debugPrint('Failed to obtain ID token from Google');
+        return User(
+          id: googleUser.id,
+          displayName: googleUser.displayName,
+          email: googleUser.email,
+          photoUrl: googleUser.photoUrl,
+        );
+      }
+
+      debugPrint('Successfully obtained Google ID token');
+
+      // Exchange Google token with backend
+      try {
+        final response = await ApiService.authenticateWithGoogle(idToken);
+        final backendUser = response.user;
+        debugPrint('Backend authentication successful');
+        return backendUser;
+      } catch (e) {
+        debugPrint('Backend authentication failed: $e');
+        return User(
+          id: googleUser.id,
+          displayName: googleUser.displayName,
+          email: googleUser.email,
+          photoUrl: googleUser.photoUrl,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error handling sign-in event: $e');
+      return null;
+    }
+  }
+
+  // Returns the platform-appropriate client ID from dart-define
+  // Web requires explicit client ID; other platforms use platform configs
   static String? _resolveClientId() {
     if (kIsWeb) {
-      // Web requires an explicit web client ID.
+      // Web requires an explicit web client ID
       final web = const String.fromEnvironment('GOOGLE_CLIENT_ID_WEB');
-      return web.isNotEmpty ? web : null;
+      if (web.isNotEmpty) return web;
+      // Placeholder for development
+      return 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
     }
 
+    // For native platforms, return the client ID if provided
+    // Otherwise, rely on platform-specific configuration files
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         final v = const String.fromEnvironment('GOOGLE_CLIENT_ID_ANDROID');
@@ -45,54 +120,76 @@ class AuthService {
     }
   }
 
+  // Returns the server client ID for backend authentication
+  // This is used to obtain ID tokens that can be verified by your backend
+  static String? _resolveServerClientId() {
+    const serverClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+    if (serverClientId.isNotEmpty) return serverClientId;
+
+    // Use platform-specific server client IDs if main one not provided
+    if (kIsWeb) {
+      const web = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID_WEB');
+      if (web.isNotEmpty) return web;
+    } else {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          const v = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID_ANDROID');
+          if (v.isNotEmpty) return v;
+          break;
+        case TargetPlatform.iOS:
+          const v = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID_IOS');
+          if (v.isNotEmpty) return v;
+          break;
+        case TargetPlatform.macOS:
+          const v = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID_MACOS');
+          if (v.isNotEmpty) return v;
+          break;
+        case TargetPlatform.linux:
+          const v = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID_LINUX');
+          if (v.isNotEmpty) return v;
+          break;
+        case TargetPlatform.windows:
+          const v = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID_WINDOWS');
+          if (v.isNotEmpty) return v;
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Placeholder for development - replace with your actual server client ID
+    return 'YOUR_SERVER_CLIENT_ID.apps.googleusercontent.com';
+  }
+
   static Future<User?> signInWithGoogle() async {
     try {
       await _initialize();
 
-      // Start lightweight auth (does not prompt the user).
-      GoogleSignIn.instance.attemptLightweightAuthentication();
-      if (kIsWeb) {
-        // On web, interactive auth must be started via the Google-rendered button.
-        // The login_screen will render it and listen for events; return null here.
-        return null;
-      }
+      debugPrint('AuthService: Starting Google sign-in...');
 
-      // On non-web platforms, interactive authenticate is supported.
-      await GoogleSignIn.instance.authenticate();
-
-      // Wait for the sign-in event and extract identity details.
-      final GoogleSignInAuthenticationEventSignIn evt = await GoogleSignIn
-          .instance
-          .authenticationEvents
-          .where((e) => e is GoogleSignInAuthenticationEventSignIn)
+      // Start listening for sign-in events
+      final signInFuture = GoogleSignIn.instance.authenticationEvents
+          .where((event) => event is GoogleSignInAuthenticationEventSignIn)
           .cast<GoogleSignInAuthenticationEventSignIn>()
-          .first;
+          .first
+          .timeout(
+            const Duration(seconds: 60),
+            onTimeout: () =>
+                throw Exception('Sign-in timeout - no event received'),
+          );
 
-      // v7 provides identity fields in the sign-in event.
-      final id = evt.user.id;
-      final displayName = evt.user.displayName;
-      final email = evt.user.email;
-      final photoUrl = evt.user.photoUrl;
+      // Attempt lightweight authentication (silent sign-in on native, may show popup on web)
+      await GoogleSignIn.instance.attemptLightweightAuthentication();
 
-      if (id.isEmpty) return null;
-
-      // Get Google ID token for backend authentication from the event
-      final idToken = evt.user.authentication.idToken;
-
-      if (idToken != null) {
-        // Exchange Google token with backend
-        final response = await ApiService.authenticateWithGoogle(idToken);
-        final backendUser = response.user;
-
-        return backendUser;
+      if (!kIsWeb) {
+        // On native platforms, call authenticate() for interactive sign-in
+        debugPrint('AuthService: Triggering authentication...');
+        await GoogleSignIn.instance.authenticate();
       }
 
-      return User(
-        id: id,
-        displayName: displayName,
-        email: email,
-        photoUrl: photoUrl,
-      );
+      debugPrint('AuthService: Waiting for sign-in event...');
+      final signInEvent = await signInFuture;
+      return await _handleSignInEvent(signInEvent);
     } on Exception catch (e) {
       debugPrint('Google sign-in failed: $e');
       rethrow;
@@ -107,5 +204,11 @@ class AuthService {
     } on Exception catch (e) {
       debugPrint('Google sign-out failed: $e');
     }
+  }
+
+  // Check if user is currently signed in by checking for stored token
+  static Future<bool> isSignedIn() async {
+    final token = await ApiService.getToken();
+    return token != null && token.isNotEmpty;
   }
 }
