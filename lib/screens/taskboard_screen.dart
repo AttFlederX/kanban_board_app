@@ -34,206 +34,17 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
   @override
   void initState() {
     super.initState();
+    
     _loadTasks();
     _setupWebSocketListener();
-  }
-
-  void _setupWebSocketListener() {
-    final appState = context.read<AppState>();
-    _wsSubscription = appState.taskUpdates.listen(_handleWebSocketMessage);
-  }
-
-  void _handleWebSocketMessage(WebSocketMessage message) {
-    // Only process messages for the current user
-    final appState = context.read<AppState>();
-    if (message.userId != appState.user?.id) {
-      return;
-    }
-
-    setState(() {
-      switch (message.type) {
-        case WebSocketMessageType.create:
-          if (message.data != null) {
-            final status = TaskStatusExtension.fromApiValue(
-              message.data!.status,
-            );
-            // Check if task doesn't already exist
-            final exists = tasks[status]!.any((t) => t.id == message.taskId);
-            if (!exists) {
-              tasks[status]!.add(message.data!);
-            }
-          }
-          break;
-
-        case WebSocketMessageType.update:
-          if (message.data != null) {
-            final newStatus = TaskStatusExtension.fromApiValue(
-              message.data!.status,
-            );
-
-            // Remove task from all columns
-            for (final status in TaskStatus.values) {
-              tasks[status]!.removeWhere((t) => t.id == message.taskId);
-            }
-
-            // Add updated task to correct column
-            tasks[newStatus]!.add(message.data!);
-          }
-          break;
-
-        case WebSocketMessageType.delete:
-          // Remove task from all columns
-          for (final status in TaskStatus.values) {
-            tasks[status]!.removeWhere((t) => t.id == message.taskId);
-          }
-          break;
-      }
-    });
-  }
-
-  Future<void> _loadTasks() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final allTasks = await TaskService.getTasks();
-
-      // Group tasks by status
-      final grouped = <TaskStatus, List<Task>>{
-        TaskStatus.backlog: [],
-        TaskStatus.todo: [],
-        TaskStatus.inProgress: [],
-        TaskStatus.done: [],
-      };
-
-      for (final task in allTasks) {
-        final status = TaskStatusExtension.fromApiValue(task.status);
-        grouped[status]!.add(task);
-      }
-
-      setState(() {
-        tasks = grouped;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
   }
 
   @override
   void dispose() {
     _pageController.dispose();
     _wsSubscription?.cancel();
+
     super.dispose();
-  }
-
-  void _editTask(TaskStatus status, int index) async {
-    final item = tasks[status]![index];
-    final result = await showDialog<TaskDetailResult>(
-      context: context,
-      builder: (context) => TaskDetailDialog(item: item),
-    );
-    if (result != null) {
-      try {
-        final updatedTask = item.copyWith(
-          title: result.title,
-          description: result.description,
-          status: result.status.apiValue,
-        );
-
-        // Update task via API
-        await TaskService.updateTask(updatedTask);
-
-        // Update UI - handle status change
-        setState(() {
-          tasks[status]!.removeAt(index);
-          tasks[result.status]!.add(updatedTask);
-        });
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Failed to update task: $e')));
-        }
-      }
-    }
-  }
-
-  void _onDragCompleted(
-    Task item,
-    TaskStatus fromStatus,
-    TaskStatus toStatus,
-  ) async {
-    // Update task status via API
-    final updatedTask = item.copyWith(status: toStatus.apiValue);
-
-    // Update UI immediately for better UX
-    setState(() {
-      tasks[fromStatus]!.removeWhere((task) => task.id == item.id);
-      tasks[toStatus]!.add(updatedTask);
-    });
-
-    try {
-      await TaskService.updateTask(updatedTask);
-    } catch (e) {
-      // Revert on error
-      setState(() {
-        tasks[toStatus]!.removeWhere((task) => task.id == item.id);
-        tasks[fromStatus]!.add(item);
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to move task: $e')));
-      }
-    }
-  }
-
-  void _createTask() async {
-    final result = await showDialog<TaskDetailResult>(
-      context: context,
-      builder: (context) => const TaskDetailDialog(),
-    );
-
-    if (result != null && mounted) {
-      try {
-        final appState = context.read<AppState>();
-        final userId = appState.user?.id ?? '';
-
-        final newTask = Task(
-          id: '', // Will be assigned by the server
-          title: result.title,
-          description: result.description,
-          status: result.status.apiValue,
-          userId: userId,
-        );
-
-        // Create task via API
-        final createdTask = await TaskService.createTask(newTask);
-
-        // Add to the appropriate column
-        setState(() {
-          tasks[result.status]!.add(createdTask);
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Task created successfully')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Failed to create task: $e')));
-        }
-      }
-    }
   }
 
   @override
@@ -362,5 +173,196 @@ class _TaskboardScreenState extends State<TaskboardScreen> {
         tooltip: 'Create new task',
       ),
     );
+  }
+
+  void _setupWebSocketListener() {
+    final appState = context.read<AppState>();
+    _wsSubscription = appState.taskUpdates.listen(_handleWebSocketMessage);
+  }
+
+  void _handleWebSocketMessage(WebSocketMessage message) {
+    // Only process messages for the current user
+    final appState = context.read<AppState>();
+    if (message.userId != appState.user?.id) {
+      return;
+    }
+
+    setState(() {
+      switch (message.type) {
+        case WebSocketMessageType.create:
+          if (message.data != null) {
+            final status = TaskStatusExtension.fromApiValue(
+              message.data!.status,
+            );
+            // Check if task doesn't already exist
+            final exists = tasks[status]!.any((t) => t.id == message.taskId);
+            if (!exists) {
+              tasks[status]!.add(message.data!);
+            }
+          }
+          break;
+
+        case WebSocketMessageType.update:
+          if (message.data != null) {
+            final newStatus = TaskStatusExtension.fromApiValue(
+              message.data!.status,
+            );
+
+            // Remove task from all columns
+            for (final status in TaskStatus.values) {
+              tasks[status]!.removeWhere((t) => t.id == message.taskId);
+            }
+
+            // Add updated task to correct column
+            tasks[newStatus]!.add(message.data!);
+          }
+          break;
+
+        case WebSocketMessageType.delete:
+          // Remove task from all columns
+          for (final status in TaskStatus.values) {
+            tasks[status]!.removeWhere((t) => t.id == message.taskId);
+          }
+          break;
+      }
+    });
+  }
+
+  Future<void> _loadTasks() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final allTasks = await TaskService.getTasks();
+
+      // Group tasks by status
+      final grouped = <TaskStatus, List<Task>>{
+        TaskStatus.backlog: [],
+        TaskStatus.todo: [],
+        TaskStatus.inProgress: [],
+        TaskStatus.done: [],
+      };
+
+      for (final task in allTasks) {
+        final status = TaskStatusExtension.fromApiValue(task.status);
+        grouped[status]!.add(task);
+      }
+
+      setState(() {
+        tasks = grouped;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _onDragCompleted(
+    Task item,
+    TaskStatus fromStatus,
+    TaskStatus toStatus,
+  ) async {
+    // Update task status via API
+    final updatedTask = item.copyWith(status: toStatus.apiValue);
+
+    // Update UI immediately for better UX
+    setState(() {
+      tasks[fromStatus]!.removeWhere((task) => task.id == item.id);
+      tasks[toStatus]!.add(updatedTask);
+    });
+
+    try {
+      await TaskService.updateTask(updatedTask);
+    } catch (e) {
+      // Revert on error
+      setState(() {
+        tasks[toStatus]!.removeWhere((task) => task.id == item.id);
+        tasks[fromStatus]!.add(item);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to move task: $e')));
+      }
+    }
+  }
+
+  void _createTask() async {
+    final result = await showDialog<TaskDetailResult>(
+      context: context,
+      builder: (context) => const TaskDetailDialog(),
+    );
+
+    if (result != null && mounted) {
+      try {
+        final appState = context.read<AppState>();
+        final userId = appState.user?.id ?? '';
+
+        final newTask = Task(
+          id: '', // Will be assigned by the server
+          title: result.title,
+          description: result.description,
+          status: result.status.apiValue,
+          userId: userId,
+        );
+
+        // Create task via API
+        final createdTask = await TaskService.createTask(newTask);
+
+        // Add to the appropriate column
+        setState(() {
+          tasks[result.status]!.add(createdTask);
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Task created successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to create task: $e')));
+        }
+      }
+    }
+  }
+
+  void _editTask(TaskStatus status, int index) async {
+    final item = tasks[status]![index];
+    final result = await showDialog<TaskDetailResult>(
+      context: context,
+      builder: (context) => TaskDetailDialog(item: item),
+    );
+    if (result != null) {
+      try {
+        final updatedTask = item.copyWith(
+          title: result.title,
+          description: result.description,
+          status: result.status.apiValue,
+        );
+
+        // Update task via API
+        await TaskService.updateTask(updatedTask);
+
+        // Update UI - handle status change
+        setState(() {
+          tasks[status]!.removeAt(index);
+          tasks[result.status]!.add(updatedTask);
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to update task: $e')));
+        }
+      }
+    }
   }
 }

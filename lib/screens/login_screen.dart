@@ -5,7 +5,7 @@ import 'package:kanban_board_app/providers/app_state.dart';
 import 'package:google_sign_in_platform_interface/google_sign_in_platform_interface.dart';
 
 // Conditionally import web-specific button - only loads on web platform
-import 'web_button_stub.dart'
+import '../widgets/web_button_stub.dart'
     if (dart.library.js_interop) 'package:google_sign_in_web/google_sign_in_web.dart';
 
 class LoginScreen extends StatelessWidget {

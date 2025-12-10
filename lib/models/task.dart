@@ -1,9 +1,9 @@
 class Task {
-  String id;
-  String title;
-  String description;
-  String status; // 'todo', 'in_progress', or 'done'
-  String userId;
+  final String id;
+  final String title;
+  final String description;
+  final String status; // 'todo', 'in_progress', or 'done'
+  final String userId;
 
   Task({
     required this.id,
